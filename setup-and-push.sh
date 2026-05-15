@@ -21,15 +21,18 @@ echo "==> git add -A"
 git add -A
 
 echo "==> git commit"
-git commit -q -m "Initial commit: Rematch community fork v5.3.1-community.1
+git commit -q -m "Rematch community fork v5.3.1-community.2
 
 Community-maintained fork of Rematch 5.3.1 by Gello, with bug fixes for
 WoW The War Within (Interface 11.x / 12.x).
 
 Major fixes:
+- Pet list empty on login + toolbar unclickable: defensive Enum.PetJournalFilter
+  resolution with LE_PET_JOURNAL_FILTER_* and integer fallbacks (resolves the
+  'attempt to index field PetJournalFilter (a nil value)' crash in roster.lua).
 - Team rename/delete: fixed copyTeam source mutation + DeleteTeam double-fire
-- Pet list empty on login: migrated LE_PET_JOURNAL_FILTER_* to Enum.PetJournalFilter
 - MoveTeam: now handles group-to-group moves (was favorites-only)
+- C_PetJournal.SetPetTypeFilter -> SetPetTypeChecked migration
 - 15+ nil guards, off-by-one fixes, divide-by-zero guards, undefined-upvalue fixes
 
 New feature:
@@ -42,7 +45,18 @@ git remote remove origin 2>/dev/null || true
 git remote add origin https://github.com/mrsnicoleahall/rematch-community-patch.git
 
 echo "==> git push -u origin main"
-git push -u origin main
+# Try a normal push first. If the remote has unrelated history (e.g. an
+# auto-created README when the repo was made on github.com), fall back to a
+# force-push since our local commit is the source of truth on first publish.
+if ! git push -u origin main 2>&1 | tee /tmp/rematch_push.log; then
+    if grep -qE "rejected|fetch first|non-fast-forward|unrelated histories" /tmp/rematch_push.log; then
+        echo "==> Remote has unrelated history. Force-pushing local as source of truth."
+        git push -u origin main --force
+    else
+        echo "==> Push failed for a reason other than non-fast-forward. See output above."
+        exit 1
+    fi
+fi
 
 echo ""
 echo "Done. Repo is live at https://github.com/mrsnicoleahall/rematch-community-patch"
