@@ -155,16 +155,39 @@ function rematch.targetInfo:GetNpcName(npcID,noDisplay)
     elseif targetNameCache[npcID] then -- if name cached, return it
         return targetNameCache[npcID]..subname
     else
-        local tooltip = RematchTooltipScan or CreateFrame("GameTooltip","RematchTooltipScan",nil,"GameTooltipTemplate")
-        tooltip:SetOwner(UIParent,"ANCHOR_NONE")
-        tooltip:SetHyperlink(format("unit:Creature-0-0-0-0-%d-0000000000",npcID))
-        if tooltip:NumLines()>0 then
-            local name = RematchTooltipScanTextLeft1:GetText()
-            if name and name:len()>0 then
-                targetNameCache[npcID] = name
-                targetsToCache[npcID] = nil
-                return name..subname
+        -- [Community fix] Blizzard now marks GameTooltip string children as "secret"
+        -- when accessed from addon-tainted context. The old approach
+        --   tooltip:SetHyperlink(...) then RematchTooltipScanTextLeft1:GetText()
+        -- throws: "attempt to index local 'name' (a secret string value, while
+        -- execution tainted by 'Rematch_Community')". That throw fires inside
+        -- refreshFunc when the Edit Team dialog opens, which is why the name
+        -- field looked blank and uneditable.
+        --
+        -- Use C_TooltipInfo.GetHyperlink instead. It returns the same data as a
+        -- table of plain Lua strings, no frame scanning, no taint.
+        local link = format("unit:Creature-0-0-0-0-%d-0000000000",npcID)
+        local name
+        if C_TooltipInfo and C_TooltipInfo.GetHyperlink then
+            local ok, data = pcall(C_TooltipInfo.GetHyperlink, link)
+            if ok and data and data.lines and data.lines[1] then
+                name = data.lines[1].leftText
             end
+        end
+        -- Fall back to the old tooltip-scan approach if the new API isn't there,
+        -- but wrap it in pcall so the secret-string throw can't take down the dialog.
+        if not name then
+            local tooltip = RematchTooltipScan or CreateFrame("GameTooltip","RematchTooltipScan",nil,"GameTooltipTemplate")
+            tooltip:SetOwner(UIParent,"ANCHOR_NONE")
+            tooltip:SetHyperlink(link)
+            if tooltip:NumLines()>0 then
+                local ok, scanned = pcall(function() return RematchTooltipScanTextLeft1:GetText() end)
+                if ok then name = scanned end
+            end
+        end
+        if name and name:len()>0 then
+            targetNameCache[npcID] = name
+            targetsToCache[npcID] = nil
+            return name..subname
         end
         -- if we reached here, then this npcID is still not cached
         if not targetsToCache[npcID] then

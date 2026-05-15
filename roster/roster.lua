@@ -199,38 +199,47 @@ hooksecurefunc(C_PetJournal,"ClearSearchFilter",function()
 end)
 
 -- clears all filters in the pet journal so all pets can be captured in roster:Update()
+-- [Community fix] entire body wrapped in pcall so any future API rename can't abort
+-- roster:Update() and cascade-break REMATCH_PETS_LOADED downstream.
 function rematch.roster:ExpandJournal()
-    journalBackup.collected = C_PetJournal.IsFilterChecked(FILTER_COLLECTED)
-    journalBackup.notCollected = C_PetJournal.IsFilterChecked(FILTER_NOT_COLLECTED)
-    for i=1,C_PetJournal.GetNumPetTypes() do
-        journalBackup.types[i] = C_PetJournal.IsPetTypeChecked(i)
-    end
-    for i=1,C_PetJournal.GetNumPetSources() do
-        journalBackup.sources[i] = C_PetJournal.IsPetSourceChecked(i)
-    end
-    C_PetJournal.ClearSearchFilter()
-    C_PetJournal.SetFilterChecked(FILTER_COLLECTED,true)
-    C_PetJournal.SetFilterChecked(FILTER_NOT_COLLECTED,true)
-    C_PetJournal.SetAllPetSourcesChecked(true)
-    C_PetJournal.SetAllPetTypesChecked(true)
+    pcall(function()
+        journalBackup.collected = C_PetJournal.IsFilterChecked(FILTER_COLLECTED)
+        journalBackup.notCollected = C_PetJournal.IsFilterChecked(FILTER_NOT_COLLECTED)
+        for i=1,C_PetJournal.GetNumPetTypes() do
+            journalBackup.types[i] = C_PetJournal.IsPetTypeChecked(i)
+        end
+        for i=1,C_PetJournal.GetNumPetSources() do
+            journalBackup.sources[i] = C_PetJournal.IsPetSourceChecked(i)
+        end
+        C_PetJournal.ClearSearchFilter()
+        C_PetJournal.SetFilterChecked(FILTER_COLLECTED,true)
+        C_PetJournal.SetFilterChecked(FILTER_NOT_COLLECTED,true)
+        C_PetJournal.SetAllPetSourcesChecked(true)
+        C_PetJournal.SetAllPetTypesChecked(true)
+    end)
 end
 
 -- restores all filters that were cleared in roster:ExpandJournal()
+-- [Community fix] entire body wrapped in pcall so any future API rename can't abort
+-- roster:Update() and cascade-break REMATCH_PETS_LOADED downstream.
 function rematch.roster:RestoreJournal()
-    C_PetJournal.SetFilterChecked(FILTER_COLLECTED,journalBackup.collected)
-    C_PetJournal.SetFilterChecked(FILTER_NOT_COLLECTED,journalBackup.notCollected)
-    for i=1,C_PetJournal.GetNumPetSources() do
-        C_PetJournal.SetPetSourceChecked(i,journalBackup.sources[i])
-    end
-    for i=1,C_PetJournal.GetNumPetTypes() do
-        -- [Community fix] C_PetJournal.SetPetTypeFilter was removed in TWW (11.0).
-        -- The throw here aborted roster:Update() mid-flight, which left the pets panel
-        -- and toolbar half-configured (no pets in the list, toolbar buttons unclickable,
-        -- and a stray pet-type icon floating below the typebar because Configure() never
-        -- ran to hide it). Sibling sources call already uses the modern SetPetSourceChecked.
-        C_PetJournal.SetPetTypeChecked(i,journalBackup.types[i])
-    end
-    C_PetJournal.SetSearchFilter(journalBackup.search)
+    pcall(function()
+        C_PetJournal.SetFilterChecked(FILTER_COLLECTED,journalBackup.collected)
+        C_PetJournal.SetFilterChecked(FILTER_NOT_COLLECTED,journalBackup.notCollected)
+        for i=1,C_PetJournal.GetNumPetSources() do
+            C_PetJournal.SetPetSourceChecked(i,journalBackup.sources[i])
+        end
+        for i=1,C_PetJournal.GetNumPetTypes() do
+            -- BugGrabber proved C_PetJournal.SetPetTypeChecked is nil on this build, while
+            -- SetPetTypeFilter is the actual API. Resolve defensively in case Blizzard
+            -- flips the name in a future patch.
+            local setter = C_PetJournal.SetPetTypeFilter or C_PetJournal.SetPetTypeChecked
+            if setter then
+                setter(i,journalBackup.types[i])
+            end
+        end
+        C_PetJournal.SetSearchFilter(journalBackup.search)
+    end)
 end
 
 -- returns true if any journal filters are used, since there's no need to expand/restore if it's already expanded
