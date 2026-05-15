@@ -155,36 +155,32 @@ function rematch.targetInfo:GetNpcName(npcID,noDisplay)
     elseif targetNameCache[npcID] then -- if name cached, return it
         return targetNameCache[npcID]..subname
     else
-        -- [Community fix] Blizzard now marks GameTooltip string children as "secret"
-        -- when accessed from addon-tainted context. The old approach
-        --   tooltip:SetHyperlink(...) then RematchTooltipScanTextLeft1:GetText()
-        -- throws: "attempt to index local 'name' (a secret string value, while
-        -- execution tainted by 'Rematch_Community')". That throw fires inside
-        -- refreshFunc when the Edit Team dialog opens, which is why the name
-        -- field looked blank and uneditable.
-        --
-        -- Use C_TooltipInfo.GetHyperlink instead. It returns the same data as a
-        -- table of plain Lua strings, no frame scanning, no taint.
+        -- [Community fix] Blizzard now marks tooltip strings as "secret" when read
+        -- from addon-tainted context. The original GameTooltip scan throws:
+        --   "attempt to index local 'name' (a secret string value, while
+        --    execution tainted by 'Rematch_Community')"
+        -- Even reading the value into a local via pcall succeeds — but then any
+        -- later operation on it (:len(), concatenation, etc.) throws, because the
+        -- *string* is poisoned, not the read itself. So the only safe path is the
+        -- newer C_TooltipInfo.GetHyperlink API which returns plain Lua strings.
+        -- If that API isn't available or returns nothing for this npcID, we fall
+        -- through to the "Retrieving name..." / "NPC <id>" placeholder path
+        -- below — better a placeholder than a thrown dialog.
         local link = format("unit:Creature-0-0-0-0-%d-0000000000",npcID)
         local name
         if C_TooltipInfo and C_TooltipInfo.GetHyperlink then
             local ok, data = pcall(C_TooltipInfo.GetHyperlink, link)
             if ok and data and data.lines and data.lines[1] then
-                name = data.lines[1].leftText
+                local candidate = data.lines[1].leftText
+                -- Even C_TooltipInfo can occasionally return a secret string in
+                -- tainted context. Probe with pcall before trusting it.
+                local probeOk = pcall(function() return type(candidate)=="string" and #candidate>0 end)
+                if probeOk and type(candidate)=="string" and #candidate>0 then
+                    name = candidate
+                end
             end
         end
-        -- Fall back to the old tooltip-scan approach if the new API isn't there,
-        -- but wrap it in pcall so the secret-string throw can't take down the dialog.
-        if not name then
-            local tooltip = RematchTooltipScan or CreateFrame("GameTooltip","RematchTooltipScan",nil,"GameTooltipTemplate")
-            tooltip:SetOwner(UIParent,"ANCHOR_NONE")
-            tooltip:SetHyperlink(link)
-            if tooltip:NumLines()>0 then
-                local ok, scanned = pcall(function() return RematchTooltipScanTextLeft1:GetText() end)
-                if ok then name = scanned end
-            end
-        end
-        if name and name:len()>0 then
+        if name then
             targetNameCache[npcID] = name
             targetsToCache[npcID] = nil
             return name..subname
