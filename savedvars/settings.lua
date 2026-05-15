@@ -274,6 +274,20 @@ setmetatable(rematch.settings,{__index = getter, __newindex = setter})
 
 -- on login do savedvar maintenance
 rematch.events:Register(rematch.settings,"PLAYER_LOGIN",function(self)
+    -- [Community fix] One-shot migration: previous versions defaulted UseTypeBar to false,
+    -- and existing users have that value persisted in their SavedVars. The typebar (pet-type /
+    -- Strong Vs / Tough Vs quick row) is the killer feature most users want visible. On the
+    -- first login after this migration ships, flip UseTypeBar to true. Mark the migration as
+    -- done so we never override the user's choice again — if they turn the typebar off later,
+    -- it stays off.
+    if not rematch.settings.CommunityMigration_TypeBarVisible then
+        rematch.settings.UseTypeBar = true
+        rematch.settings.CommunityMigration_TypeBarVisible = true
+        if rematch.petsPanel and rematch.petsPanel.Configure then
+            rematch.petsPanel:Configure()
+        end
+    end
+
     if rematch.settings.ResetFilters then -- if Reset Filters On Login checked, clear filters on login
         rematch.filters:ClearAll()
         if rematch.settings.ResetExceptSearch then -- if Don't Reset Search With Filters, still reset search
