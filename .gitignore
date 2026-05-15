@@ -1,0 +1,18 @@
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# WoW addon developer artifacts
+*.bak
+*.bak.snapshot
+*.tmp
+
+# Local build/scratch
+/build/
+/dist/
+/release/
